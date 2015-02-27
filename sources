@@ -1,0 +1,9 @@
+TARGETNAME=NRedir4Dokan
+TARGETTYPE=DRIVER
+
+TARGETLIBS= \
+	$(DDK_LIB_PATH)\wdmsec.lib
+
+SOURCES= \
+  NRedir4Dokan.cpp \
+	NRedir4Dokan.rc
