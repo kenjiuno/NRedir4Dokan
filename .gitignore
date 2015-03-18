@@ -183,3 +183,5 @@ UpgradeLog*.htm
 FakesAssemblies/
 
 /sys/C.cmd
+/nred_np/buildchk_win7_x86.*
+/nred_np/objchk_win7_x86
