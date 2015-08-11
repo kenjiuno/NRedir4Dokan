@@ -87,11 +87,11 @@ Section "np install"
 
   ${If} ${RunningX64}
     SetOutPath "$PROGRAMFILES64\${APP}"
-    File "..\nred_np\objchk_win7_amd64\amd64\nrednp.dll"
+    File "..\nrednp\objchk_win7_amd64\amd64\nrednp.dll"
   ${EndIf}
   ${If} 1 > 0
     SetOutPath "$PROGRAMFILES32\${APP}"
-    File "..\nred_np\objchk_win7_x86\i386\nrednp.dll"
+    File "..\nrednp\objchk_win7_x86\i386\nrednp.dll"
   ${EndIf}
 
   ${EnableX64FSRedirection}
