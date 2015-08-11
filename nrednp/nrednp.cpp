@@ -171,32 +171,6 @@ NPCancelConnection(
 	return WN_SUCCESS;
 }
 
-
-DWORD APIENTRY
-NPGetConnection(
-	__in LPWSTR LocalName,
-	__out LPWSTR RemoteName,
-	__inout LPDWORD BufferSize)
-{
-	DbgPrintW(L"NpGetConnection %s, %d\n", LocalName, *BufferSize);
-	if (*BufferSize < sizeof(WCHAR) * 4) {
-		*BufferSize = sizeof(WCHAR) * 4;
-		return WN_MORE_DATA;
-	}
-	//if (NotConnected) {
-	//	return WN_NOT_CONNECTED;
-	//  return WN_NO_NETWORK;
-	//}
-	RemoteName[0] = LocalName[0]; // n
-	RemoteName[1] = LocalName[1]; // :
-	RemoteName[2] = L'\\';
-	RemoteName[3] = L'\0';
-	*BufferSize = 4 * sizeof(WCHAR);
-
-
-	return WN_SUCCESS;
-}
-
 typedef struct Share {
 	std::wstring server, share, ntPath;
 	
@@ -345,6 +319,45 @@ bool GetShares(Shares &shares) {
 		return true;
 	}
 	return false;
+}
+
+DWORD APIENTRY
+NPGetConnection(
+	__in LPWSTR LocalName,
+	__out LPWSTR RemoteName,
+	__inout LPDWORD BufferSize)
+{
+	DbgPrintW(L"NpGetConnection %s, %d\n", LocalName, *BufferSize);
+
+	if (iswalpha(LocalName[0]) && LocalName[1] == L':') {
+		WCHAR wcLocal[10] = {LocalName[0], ':'};
+		WCHAR wcTarget[256] = {0};
+		
+		if (QueryDosDevice(wcLocal, wcTarget, 256) != 0) {
+			Shares shares;
+			if (GetShares(shares)) {
+				Shares::iterator iter = shares.begin();
+				for (; iter != shares.end(); iter++) {
+					if (lstrcmpi(iter->ntPath.c_str(), wcTarget) == 0) {
+						DWORD cchNeed = 2 + iter->server.size() + 1 + iter->share.size() + 1;
+						if (cchNeed > *BufferSize) {
+							*BufferSize = cchNeed;
+							return WN_MORE_DATA;
+						}
+						
+						LPWSTR term = RemoteName + *BufferSize;
+						StringCchCopyW(RemoteName, term -RemoteName, L"\\\\");
+						StringCchCatW(RemoteName, term -RemoteName, iter->server.c_str());
+						StringCchCatW(RemoteName, term -RemoteName, L"\\");
+						StringCchCatW(RemoteName, term -RemoteName, iter->share.c_str());
+						return WN_SUCCESS;
+					}
+				}
+			}
+		}
+	}
+
+	return WN_BAD_NETNAME;
 }
 
 DWORD APIENTRY
