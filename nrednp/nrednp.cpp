@@ -18,7 +18,7 @@ DokanDbgPrintW(LPCWSTR format, ...)
 	va_list argp;
 	va_start(argp, format);
 	StringCchVPrintfW(buffer, 127, format, argp);
-    va_end(argp);
+	va_end(argp);
 	OutputDebugStringW(buffer);
 }
 
@@ -31,8 +31,8 @@ NPGetCaps(
 {
 	DWORD rc = 0;
 	DbgPrintW(L"NPGetCaps %d\n", Index);
-  
-    switch (Index) {
+
+	switch (Index) {
 	case WNNC_SPEC_VERSION:
 		DbgPrintW(L"  WNNC_SPEC_VERSION\n");
 		rc = WNNC_SPEC_VERSION51;
@@ -79,7 +79,7 @@ NPGetCaps(
 		DbgPrintW(L"  default\n");
 		rc = 0;
 		break;
-    }
+	}
 
 	return rc;
 }
@@ -102,8 +102,8 @@ NPLogonNotify(
 
 DWORD APIENTRY
 NPPasswordChangeNotify(
-    __in LPCWSTR AuthentInfoType,
-    __in LPVOID AuthentInfo,
+	__in LPCWSTR AuthentInfoType,
+	__in LPVOID AuthentInfo,
 	__in LPCWSTR PreviousAuthentInfoType,
 	__in LPVOID RreviousAuthentInfo,
 	__in LPWSTR StationName,
@@ -118,9 +118,9 @@ NPPasswordChangeNotify(
 
 DWORD APIENTRY
 NPAddConnection(
-    __in LPNETRESOURCE NetResource,
+	__in LPNETRESOURCE NetResource,
 	__in LPWSTR Password,
-    __in LPWSTR UserName)
+	__in LPWSTR UserName)
 {
 	DbgPrintW(L"NPAddConnection\n");
 	return  NPAddConnection3(NULL, NetResource, Password, UserName, 0);
@@ -128,7 +128,7 @@ NPAddConnection(
 
 DWORD APIENTRY
 NPAddConnection3(
-    __in HWND WndOwner,
+	__in HWND WndOwner,
 	__in LPNETRESOURCE NetResource,
 	__in LPWSTR Password,
 	__in LPWSTR UserName,
@@ -164,8 +164,8 @@ NPAddConnection3(
 
 DWORD APIENTRY
 NPCancelConnection(
-     __in LPWSTR Name,
-	 __in BOOL Force)
+	__in LPWSTR Name,
+	__in BOOL Force)
 {
 	DbgPrintW(L"NpCancelConnection %s %d\n", Name, Force);
 	return WN_SUCCESS;
@@ -174,7 +174,7 @@ NPCancelConnection(
 
 DWORD APIENTRY
 NPGetConnection(
-    __in LPWSTR LocalName,
+	__in LPWSTR LocalName,
 	__out LPWSTR RemoteName,
 	__inout LPDWORD BufferSize)
 {
@@ -464,9 +464,9 @@ NPGetResourceParent(
 DWORD APIENTRY
 NPEnumResource(
 	__in HANDLE Enum,
-	 __in LPDWORD Count,
-	 __in LPVOID Buffer,
-	 __in LPDWORD BufferSize)
+	__in LPDWORD Count,
+	__in LPVOID Buffer,
+	__in LPDWORD BufferSize)
 {
 	DbgPrintW(L"NPEnumResource\n");
 	if (Enum == NULL || Count == NULL || Buffer == NULL || BufferSize == NULL)
