@@ -84,6 +84,13 @@ NRedMapPath(
 	__out PBOOLEAN pbMapOk
 	);
 
+extern "C" NTSTATUS
+NRedIsIPC(
+	__in PNRED_GLOBAL pGlobal,
+	__in PCUNICODE_STRING pSIn,
+	__out PBOOLEAN pbIsIPC
+	);
+
 extern "C" VOID
 NRedSwapUnicodeString(
 	__in __out PUNICODE_STRING p1,

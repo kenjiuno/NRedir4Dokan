@@ -11,8 +11,10 @@
 #pragma alloc_text (PAGE, SimRepAllocateUnicodeString)
 #pragma alloc_text (PAGE, SimRepFreeUnicodeString)
 #pragma alloc_text (PAGE, NRedMapPath)
+#pragma alloc_text (PAGE, NRedIsIPC)
 #pragma alloc_text (PAGE, NRedSwapUnicodeString)
 #pragma alloc_text (PAGE, NRedUnicodeStringContains)
+
 #endif
 
 // ############################## SimRepAllocateUnicodeString
@@ -274,6 +276,103 @@ _Done:
 	return status;
 }
 
+// ############################## NRedIsIPC
+
+NTSTATUS
+NRedIsIPC(
+	__in PNRED_GLOBAL pGlobal,
+	__in PCUNICODE_STRING pSIn,
+	__out PBOOLEAN pbIsIPC
+	)
+{
+	// STATUS_SUCCESS
+	// STATUS_OBJECT_PATH_NOT_FOUND
+	
+	HANDLE hkey = NULL;
+	OBJECT_ATTRIBUTES objectAttribs;
+	NTSTATUS status;
+	PKEY_VALUE_FULL_INFORMATION pInfo = NULL;
+	
+	PAGED_CODE();
+	
+	if (pGlobal == NULL)
+		return STATUS_INVALID_PARAMETER;
+	if (pSIn == NULL)
+		return STATUS_INVALID_PARAMETER;
+	if (pbIsIPC == NULL)
+		return STATUS_INVALID_PARAMETER;
+	
+	*pbIsIPC = FALSE;
+	
+	do {
+		ULONG y = 0;
+		const SIZE_T cbInfo = 4096;
+		
+		pInfo = (PKEY_VALUE_FULL_INFORMATION)ExAllocatePoolWithTag(PagedPool, cbInfo, NREG_REG_TAG);
+		if (pInfo == NULL) {
+			status = STATUS_INSUFFICIENT_RESOURCES;
+			break;
+		}
+		
+		InitializeObjectAttributes(&objectAttribs, &(pGlobal->RPMap), OBJ_KERNEL_HANDLE, NULL, NULL);
+		status = ZwOpenKey(&hkey, GENERIC_READ, &objectAttribs);
+		if (!NT_SUCCESS(status)) {
+			break;
+		}
+		
+		UNICODE_STRING IpcName;
+		RtlInitUnicodeString(&IpcName, L"ipc");
+		
+		for (; y < 50; y++) {
+			ULONG cb = 0;
+			status = ZwEnumerateValueKey(hkey, y, KeyValueFullInformation, pInfo, cbInfo, &cb);
+			if (!NT_SUCCESS(status))
+				break;
+			
+			if (pInfo->Type == REG_SZ && (pInfo->NameLength) < 2*2048 && (pInfo->DataLength) < 2*2048) {
+				UNICODE_STRING RName, RData;
+				RName.Length = RName.MaximumLength = (USHORT)pInfo->NameLength; // bytes
+				RName.Buffer = pInfo->Name;
+				while (RName.Length >= 2 && RName.Buffer[(RName.Length / 2) -1] == 0) {
+					RName.Length -= 2;
+				}
+				if (RName.Length != 0 && RName.Buffer[(RName.Length / 2) -1] == L'\\') {
+					RName.Length -= 2;
+				}
+				RData.Length = RData.MaximumLength = (USHORT)pInfo->DataLength;
+				RData.Buffer = (WCHAR *)(((UCHAR *)pInfo) + pInfo->DataOffset);
+				while (RData.Length >= 2 && RData.Buffer[(RData.Length / 2) -1] == 0) {
+					RData.Length -= 2;
+				}
+				if (RData.Length >= 2 && RData.Buffer[(RData.Length / 2) -1] == L'\\') {
+					RData.Length -= 2;
+				}
+				
+				// RName: \dokanworld\server
+				// SIn:   \dokanworld\server
+				if (RtlEqualUnicodeString(&RName, pSIn, TRUE)) {
+					if (RtlEqualUnicodeString(&RData, &IpcName, TRUE)) {
+						*pbIsIPC = TRUE;
+						status = STATUS_SUCCESS;
+						goto _Done;
+					}
+				}
+			}
+		_Skip:
+			;
+		}
+		status = STATUS_OBJECT_PATH_NOT_FOUND;
+	} while (0);
+
+_Done:
+	if (hkey != NULL)
+		ZwClose(hkey);
+	if (pInfo != NULL)
+		ExFreePoolWithTag(pInfo, NREG_REG_TAG);
+
+	return status;
+}
+
 // ############################## NRedCreate
 
 NTSTATUS
@@ -290,6 +389,7 @@ NRedCreate(
 	UNICODE_STRING SOut = {0};
 	BOOLEAN bMapOk;
 	PNRED_GLOBAL pGlobal;
+	BOOLEAN bIsIPC;
 
 	PAGED_CODE();
 
@@ -319,6 +419,12 @@ NRedCreate(
 			__leave;
 		}
 
+		status = NRedIsIPC(pGlobal, pSIn, &bIsIPC);
+		if (NT_SUCCESS(status) && bIsIPC) {
+			status = STATUS_SUCCESS;
+			_leave;
+		}
+		
 		SOut.MaximumLength = 2*2048; // bytes
 		
 		status = SimRepAllocateUnicodeString(&SOut);
@@ -327,6 +433,10 @@ NRedCreate(
 		}
 
 		status = NRedMapPath(pGlobal, pSIn, &SOut, &bMapOk);
+		if (!NT_SUCCESS(status)) {
+			status = STATUS_ACCESS_DENIED;
+			__leave;
+		}
 		if (!bMapOk) {
 			status = STATUS_ACCESS_DENIED;
 			__leave;
@@ -405,6 +515,7 @@ NRedDeviceControl(
 			{
 				UNICODE_STRING SIn;
 				BOOLEAN bMapOk;
+				BOOLEAN bIsIPC;
 				
 				PQUERY_PATH_REQUEST pReq = (PQUERY_PATH_REQUEST)irpSp->Parameters.DeviceIoControl.Type3InputBuffer;
 				
@@ -420,10 +531,22 @@ NRedDeviceControl(
 				DDbgPrint("    PathNameLength = %lu \n", pReq->PathNameLength);
 				DDbgPrint("    FilePathName = %wZ \n", &SIn);
 				
-				status = NRedMapPath(pGlobal, &SIn, NULL, &bMapOk);
-				if (!bMapOk) {
-					status = STATUS_BAD_NETWORK_PATH;
+				status = NRedIsIPC(pGlobal, &SIn, &bIsIPC);
+				DDbgPrint("    IsIPC = %lu \n", 0UL + bIsIPC);
+				if (NT_SUCCESS(status) && bIsIPC) {
+					status = STATUS_BAD_NETWORK_NAME;
 					break;
+				}
+				else {
+					status = NRedMapPath(pGlobal, &SIn, NULL, &bMapOk);
+					if (!NT_SUCCESS(status)) {
+						status = STATUS_BAD_NETWORK_PATH;
+						break;
+					}
+					if (!bMapOk) {
+						status = STATUS_BAD_NETWORK_PATH;
+						break;
+					}
 				}
 				
 				PQUERY_PATH_RESPONSE pRes = (PQUERY_PATH_RESPONSE)Irp->UserBuffer;
@@ -496,7 +619,8 @@ NRedDispatchFileSystemControl(
 			break;
 
 		case IRP_MN_USER_FS_REQUEST:
-			DDbgPrint("	 IRP_MN_USER_FS_REQUEST\n");
+			DDbgPrint("	 IRP_MN_USER_FS_REQUEST %08lX \n"
+				, irpSp->Parameters.FileSystemControl.FsControlCode);
 			break;
 
 		case IRP_MN_VERIFY_VOLUME:
