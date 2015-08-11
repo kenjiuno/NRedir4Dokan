@@ -31,12 +31,17 @@ RequestExecutionLevel admin
 ; Pages
 
 Page directory
+Page components
 Page instfiles
+
+InstType "Install"
+InstType "Remove"
 
 ;--------------------------------
 
 ; The stuff to install
 Section "" ;No components page, name is not important
+  SectionIn 1 2
 
   ; Set output path to the installation directory.
   SetOutPath $INSTDIR
@@ -47,6 +52,7 @@ Section "" ;No components page, name is not important
 SectionEnd ; end the section
 
 Section "driver install"
+  SectionIn 1
   ${DisableX64FSRedirection}
   SetOutPath "$SYSDIR\drivers"
   ${If} ${RunningX64}
@@ -60,10 +66,23 @@ Section "driver install"
   ExecWait 'sc.exe create NRedir4Dokan type= filesys start= auto binPath= "$OUTDIR\NRedir4Dokan.sys" DisplayName= ${APP} ' $0
   DetailPrint "Œ‹‰Ê: $0"
   ${EnableX64FSRedirection}
-  
 SectionEnd
 
+
+Section "driver remove"
+  SectionIn 2
+  ${DisableX64FSRedirection}
+  SetOutPath "$SYSDIR\drivers"
+  Delete /REBOOTOK "NRedir4Dokan.sys"
+
+  ExecWait 'sc.exe delete NRedir4Dokan ' $0
+  DetailPrint "Œ‹‰Ê: $0"
+  ${EnableX64FSRedirection}
+SectionEnd
+
+
 Section "np install"
+  SectionIn 1
   ${DisableX64FSRedirection}
 
   ${If} ${RunningX64}
@@ -87,5 +106,26 @@ Section "np install"
 
   ReadRegStr  $1 HKLM "SYSTEM\CurrentControlSet\Control\NetworkProvider\Order" "ProviderOrder"
   ${WordAddS} $1 "," "+${NP}" $2
+  WriteRegStr    HKLM "SYSTEM\CurrentControlSet\Control\NetworkProvider\Order" "ProviderOrder" $2
+SectionEnd
+
+
+Section "np delete"
+  SectionIn 2
+  ${DisableX64FSRedirection}
+
+  ${If} ${RunningX64}
+    Delete /REBOOTOK "$PROGRAMFILES64\${APP}\nrednp.dll"
+    RMDir  /REBOOTOK "$PROGRAMFILES64\${APP}"
+  ${EndIf}
+  ${If} 1 > 0
+    Delete /REBOOTOK "$PROGRAMFILES32\${APP}\nrednp.dll"
+    RMDir  /REBOOTOK "$PROGRAMFILES32\${APP}"
+  ${EndIf}
+
+  ${EnableX64FSRedirection}
+
+  ReadRegStr  $1 HKLM "SYSTEM\CurrentControlSet\Control\NetworkProvider\Order" "ProviderOrder"
+  ${WordAddS} $1 "," "-${NP}" $2
   WriteRegStr    HKLM "SYSTEM\CurrentControlSet\Control\NetworkProvider\Order" "ProviderOrder" $2
 SectionEnd
