@@ -180,6 +180,7 @@ NPGetConnection(
 {
 	DbgPrintW(L"NpGetConnection %s, %d\n", LocalName, *BufferSize);
 	if (*BufferSize < sizeof(WCHAR) * 4) {
+		*BufferSize = sizeof(WCHAR) * 4;
 		return WN_MORE_DATA;
 	}
 	//if (NotConnected) {
