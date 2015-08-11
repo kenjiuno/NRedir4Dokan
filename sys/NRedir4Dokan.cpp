@@ -534,15 +534,10 @@ NRedDeviceControl(
 				status = NRedIsIPC(pGlobal, &SIn, &bIsIPC);
 				DDbgPrint("    IsIPC = %lu \n", 0UL + bIsIPC);
 				if (NT_SUCCESS(status) && bIsIPC) {
-					status = STATUS_BAD_NETWORK_NAME;
-					break;
+
 				}
 				else {
-					status = NRedMapPath(pGlobal, &SIn, NULL, &bMapOk);
-					if (!NT_SUCCESS(status)) {
-						status = STATUS_BAD_NETWORK_PATH;
-						break;
-					}
+					status = NRedMapPath(pGlobal, &SIn, NULL, &bMapOk); // shall return STATUS_INVALID_PARAMETER
 					if (!bMapOk) {
 						status = STATUS_BAD_NETWORK_PATH;
 						break;
@@ -605,6 +600,8 @@ NRedDispatchFileSystemControl(
 
 		irpSp = IoGetCurrentIrpStackLocation(Irp);
 
+		DWORD CtlCode;
+
 		switch(irpSp->MinorFunction) {
 		case IRP_MN_KERNEL_CALL:
 			DDbgPrint("	 IRP_MN_KERNEL_CALL\n");
@@ -619,8 +616,14 @@ NRedDispatchFileSystemControl(
 			break;
 
 		case IRP_MN_USER_FS_REQUEST:
-			DDbgPrint("	 IRP_MN_USER_FS_REQUEST %08lX \n"
-				, irpSp->Parameters.FileSystemControl.FsControlCode);
+			CtlCode = irpSp->Parameters.FileSystemControl.FsControlCode;
+			DDbgPrint("	 IRP_MN_USER_FS_REQUEST %08lX \n", CtlCode);
+			
+			switch (CtlCode) {
+			case 0x00060194 : //FSCTL_DFS_GET_REFERRALS:
+				status = STATUS_DFS_UNAVAILABLE;
+				break;
+			}
 			break;
 
 		case IRP_MN_VERIFY_VOLUME:
