@@ -69,7 +69,7 @@ NPGetCaps(
 		break;
 	case WNNC_DIALOG:
 		DbgPrintW(L"  WNNC_DIALOG\n");
-		rc = 0;
+		rc = WNNC_DLG_GETRESOURCEINFORMATION;
 		break;
 	case WNNC_ADMIN:
 		DbgPrintW(L"  WNNC_ADMIN\n");
@@ -767,7 +767,7 @@ NPGetResourceInformation(
 					&& StrCmpIW(iter->server.c_str(), unc.server.c_str()) == 0
 					&& StrCmpIW(iter->share.c_str(), unc.share.c_str()) == 0
 				) {
-					NetRes r1;
+					NetRes r1 = {0};
 					r1.RemoteName
 						.append(L"\\\\")
 						.append(iter->server)
@@ -777,7 +777,7 @@ NPGetResourceInformation(
 					r1.Provider = L"NRedir4Dokan";
 					r1.Type = RESOURCETYPE_DISK;
 					r1.DisplayType = RESOURCEDISPLAYTYPE_SHARE;
-					r1.Usage = RESOURCEUSAGE_CONNECTABLE;
+					r1.Usage = RESOURCEUSAGE_CONNECTABLE | RESOURCEUSAGE_NOLOCALDEVICE;
 					
 					bool useSystem = (System != NULL && !unc.local.empty());
 					WriteRemainingPath r2;
