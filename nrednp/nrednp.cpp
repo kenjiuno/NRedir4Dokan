@@ -199,6 +199,35 @@ typedef struct Share {
 	}
 }	Share;
 
+typedef struct UPath {
+	std::wstring server, share, local;
+	
+	bool parse(LPCWSTR pcw) {
+		if (pcw != NULL && pcw[0] == L'\\' && pcw[1] == L'\\') {
+			LPCWSTR pcw0 = pcw +2;
+			LPCWSTR pcw1 = StrChrW(pcw0, L'\\');
+			if (pcw1 != NULL) {
+				server.assign(pcw0, pcw1 -pcw0);
+				
+				LPCWSTR pcw2 = StrChrW(pcw1 +1, L'\\');
+				if (pcw2 == NULL) {
+					share.assign(pcw1 +1);
+					local.clear();
+				}
+				else {
+					share.assign(pcw1 +1, pcw2 -pcw1 -1);
+					local.assign(pcw2 +1);
+				}
+				return true;
+			}
+		}
+		server.clear();
+		share.clear();
+		local.clear();
+		return false;
+	}
+}	UPath;
+
 typedef struct {
 	bool operator()(
 		const std::wstring &lv, 
@@ -338,7 +367,7 @@ NPGetConnection(
 			if (GetShares(shares)) {
 				Shares::iterator iter = shares.begin();
 				for (; iter != shares.end(); iter++) {
-					if (lstrcmpi(iter->ntPath.c_str(), wcTarget) == 0) {
+					if (StrCmpIW(iter->ntPath.c_str(), wcTarget) == 0) {
 						DWORD cchNeed = 2 + iter->server.size() + 1 + iter->share.size() + 1;
 						if (cchNeed > *BufferSize) {
 							*BufferSize = cchNeed;
@@ -510,16 +539,125 @@ NPEnumResource(
 	return WN_SUCCESS;
 }
 
-DWORD APIENTRY
-NPGetResourceInformation(
-	__in LPNETRESOURCE NetResource,
-	__out LPVOID Buffer,
-	__out LPDWORD BufferSize,
-	__out LPWSTR *System)
-{
-	DbgPrintW(L"NPGetResourceInformation\n");
-	return WN_NOT_SUPPORTED;
-}
+typedef struct UniversalNameInfo { // UNIVERSAL_NAME_INFO structure
+	std::wstring UniversalName;
+	
+	typedef UNIVERSAL_NAME_INFO TOutput;
+	
+	DWORD Bytes() const {
+		return sizeof(TOutput)
+			+(UniversalName.empty() ? 0 : 2 * (UniversalName.size() +1))
+			;
+	}
+	
+	bool WriteTo(PBYTE &pLo, PBYTE &pHi) const {
+		if (pLo +sizeof(TOutput) > pHi)
+			return false;
+		TOutput *pNR = reinterpret_cast<TOutput *>(pLo);
+		pLo += sizeof(TOutput);
+		if (!Ut::Wr(pLo, pHi, UniversalName, pNR->lpUniversalName))
+			return false;
+
+		return true;
+	}
+	
+	struct Ut {
+		static bool Wr(PBYTE &pLo, PBYTE &pHi, const std::wstring &ws, LPWSTR &ppcw) {
+			if (ws.empty()) {
+				ppcw = NULL;
+				return true;
+			}
+			DWORD cb = 2 * (ws.size() +1);
+			if (pHi -pLo < cb)
+				return false;
+			pHi -= cb;
+			ppcw = reinterpret_cast<LPWSTR>(pHi);
+			memcpy(pHi, ws.c_str(), cb);
+			return true;
+		}
+	};
+}	UniversalNameInfo;
+
+typedef struct WriteRemainingPath {
+	std::wstring RemainingPath;
+	
+	DWORD Bytes() const {
+		return 
+			+(RemainingPath.empty() ? 0 : 2 * (RemainingPath.size() +1))
+			;
+	}
+	
+	bool WriteTo(PBYTE &pLo, PBYTE &pHi, LPWSTR &ppcw) const {
+		if (pLo > pHi)
+			return false;
+		if (!Ut::Wr(pLo, pHi, RemainingPath, ppcw))
+			return false;
+
+		return true;
+	}
+	
+	struct Ut {
+		static bool Wr(PBYTE &pLo, PBYTE &pHi, const std::wstring &ws, LPWSTR &ppcw) {
+			if (ws.empty()) {
+				ppcw = NULL;
+				return true;
+			}
+			DWORD cb = 2 * (ws.size() +1);
+			if (pHi -pLo < cb)
+				return false;
+			pHi -= cb;
+			ppcw = reinterpret_cast<LPWSTR>(pHi);
+			memcpy(pHi, ws.c_str(), cb);
+			return true;
+		}
+	};
+}	WriteRemainingPath;
+
+
+typedef struct RemoteNameInfo  { // REMOTE_NAME_INFO structure
+	std::wstring UniversalName, ConnectionName, RemainingPath;
+	
+	typedef REMOTE_NAME_INFO TOutput;
+	
+	DWORD Bytes() const {
+		return sizeof(TOutput)
+			+(UniversalName.empty() ? 0 : 2 * (UniversalName.size() +1))
+			+(ConnectionName.empty() ? 0 : 2 * (ConnectionName.size() +1))
+			+(RemainingPath.empty() ? 0 : 2 * (RemainingPath.size() +1))
+			;
+	}
+	
+	bool WriteTo(PBYTE &pLo, PBYTE &pHi) const {
+		if (pLo +sizeof(TOutput) > pHi)
+			return false;
+		TOutput *pNR = reinterpret_cast<TOutput *>(pLo);
+		pLo += sizeof(TOutput);
+		if (!Ut::Wr(pLo, pHi, UniversalName, pNR->lpUniversalName))
+			return false;
+		if (!Ut::Wr(pLo, pHi, ConnectionName, pNR->lpConnectionName))
+			return false;
+		if (!Ut::Wr(pLo, pHi, RemainingPath, pNR->lpRemainingPath))
+			return false;
+
+		return true;
+	}
+	
+	struct Ut {
+		static bool Wr(PBYTE &pLo, PBYTE &pHi, const std::wstring &ws, LPWSTR &ppcw) {
+			if (ws.empty()) {
+				ppcw = NULL;
+				return true;
+			}
+			DWORD cb = 2 * (ws.size() +1);
+			if (pHi -pLo < cb)
+				return false;
+			pHi -= cb;
+			ppcw = reinterpret_cast<LPWSTR>(pHi);
+			memcpy(pHi, ws.c_str(), cb);
+			return true;
+		}
+	};
+}	RemoteNameInfo;
 
 
 DWORD APIENTRY
@@ -530,6 +668,142 @@ NPGetUniversalName(
 	__in LPDWORD BufferSize)
 {
 	DbgPrintW(L"NPGetUniversalName %s\n", LocalPath);
-	return WN_NOT_SUPPORTED;
+	if (LocalPath == NULL)
+		return ERROR_INVALID_PARAMETER;
+	if (BufferSize == NULL)
+		return ERROR_INVALID_PARAMETER;
+	if (iswalpha(LocalPath[0]) && LocalPath[1] == L':') {
+		WCHAR wcLocal[10] = {LocalPath[0], ':'};
+		WCHAR wcTarget[256] = {0};
+		
+		if (QueryDosDevice(wcLocal, wcTarget, 256) != 0) {
+			Shares shares;
+			if (GetShares(shares)) {
+				Shares::iterator iter = shares.begin();
+				for (; iter != shares.end(); iter++) {
+					if (StrCmpIW(iter->ntPath.c_str(), wcTarget) == 0) {
+						if (LocalPath[2] != 0 && LocalPath[2] != L'\\')
+							return ERROR_INVALID_PARAMETER;
+						
+						if (false) { }
+						else if (InfoLevel == UNIVERSAL_NAME_INFO_LEVEL) {
+							UniversalNameInfo oo;
+							oo.UniversalName.assign(L"")
+								.append(L"\\\\")
+								.append(iter->server)
+								.append(L"\\")
+								.append(iter->share)
+								.append(LocalPath +2)
+								;
+							
+							if (oo.Bytes() > *BufferSize) {
+								*BufferSize = oo.Bytes();
+								return WN_MORE_DATA;
+							}
+
+							PBYTE pLo = reinterpret_cast<PBYTE>(Buffer);
+							PBYTE pHi = pLo + *BufferSize;
+							oo.WriteTo(pLo, pHi);
+							return WN_SUCCESS;
+						}
+						else if (InfoLevel == REMOTE_NAME_INFO_LEVEL) {
+							RemoteNameInfo oo;
+							oo.UniversalName.assign(L"")
+								.append(L"\\\\")
+								.append(iter->server)
+								.append(L"\\")
+								.append(iter->share)
+								.append(LocalPath +2)
+								;
+							oo.ConnectionName.assign(L"")
+								.append(L"\\\\")
+								.append(iter->server)
+								.append(L"\\")
+								.append(iter->share)
+								;
+							oo.RemainingPath.assign(LocalPath +2)
+								;
+							
+							if (oo.Bytes() > *BufferSize) {
+								*BufferSize = oo.Bytes();
+								return WN_MORE_DATA;
+							}
+
+							PBYTE pLo = reinterpret_cast<PBYTE>(Buffer);
+							PBYTE pHi = pLo + *BufferSize;
+							oo.WriteTo(pLo, pHi);
+							return WN_SUCCESS;
+						}
+						else return ERROR_INVALID_PARAMETER;
+					}
+				}
+			}
+		}
+	}
+	return WN_NOT_CONNECTED;
 }
 
+
+DWORD APIENTRY
+NPGetResourceInformation(
+	__in LPNETRESOURCE NetResource,
+	__out LPVOID Buffer,
+	__out LPDWORD BufferSize,
+	__out LPWSTR *System)
+{
+	DbgPrintW(L"NPGetResourceInformation\n");
+	if (NetResource == NULL)
+		return ERROR_INVALID_PARAMETER;
+	if (BufferSize == NULL)
+		return ERROR_INVALID_PARAMETER;
+	
+	UPath unc;
+	if (unc.parse(NetResource->lpRemoteName)) {
+		Shares shares;
+		if (GetShares(shares)) {
+			Shares::iterator iter = shares.begin();
+			for (; iter != shares.end(); iter++) {
+				if (true
+					&& StrCmpIW(iter->server.c_str(), unc.server.c_str()) == 0
+					&& StrCmpIW(iter->share.c_str(), unc.share.c_str()) == 0
+				) {
+					NetRes r1;
+					r1.RemoteName
+						.append(L"\\\\")
+						.append(iter->server)
+						.append(L"\\")
+						.append(iter->share)
+						;
+					r1.Provider = L"NRedir4Dokan";
+					r1.Type = RESOURCETYPE_DISK;
+					r1.DisplayType = RESOURCEDISPLAYTYPE_SHARE;
+					r1.Usage = RESOURCEUSAGE_CONNECTABLE;
+					
+					bool useSystem = (System != NULL && !unc.local.empty());
+					WriteRemainingPath r2;
+					if (useSystem) {
+						r2.RemainingPath
+							.append(L"\\")
+							.append(unc.local)
+							;
+					}
+					
+					DWORD cbWrite = r1.Bytes() + r2.Bytes();
+					if (cbWrite > *BufferSize) {
+						*BufferSize = cbWrite;
+						return WN_MORE_DATA;
+					}
+
+					PBYTE pLo = reinterpret_cast<PBYTE>(Buffer);
+					PBYTE pHi = pLo + *BufferSize;
+					r1.WriteTo(pLo, pHi);
+					if (useSystem) {
+						r2.WriteTo(pLo, pHi, *System);
+					}
+					return WN_SUCCESS;
+				}
+			}
+		}
+	}
+	return WN_BAD_NETNAME;
+}
