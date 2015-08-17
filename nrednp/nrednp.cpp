@@ -50,7 +50,7 @@ NPGetCaps(
 
 	case WNNC_CONNECTION:
 		DbgPrintW(L"  WNC_CONNECTION\n");
-		rc = WNNC_CON_GETCONNECTIONS;
+		rc = WNNC_CON_GETCONNECTIONS|WNNC_CON_GETPERFORMANCE;
 		break;
 
 	case WNNC_ENUMERATION:
@@ -806,4 +806,38 @@ NPGetResourceInformation(
 		}
 	}
 	return WN_BAD_NETNAME;
+}
+
+DWORD APIENTRY
+NPGetConnectionPerformance(
+	__in LPTSTR                 lpRemoteName,
+	__out LPNETCONNECTINFOSTRUCT lpNetConnectInfo)
+{
+	DbgPrintW(L"NPGetResourceInformation %s \n", lpRemoteName);
+
+	if (lpNetConnectInfo == NULL)
+		return ERROR_INVALID_PARAMETER;
+	if (lpNetConnectInfo->cbStructure < sizeof(NETCONNECTINFOSTRUCT))
+		return ERROR_INVALID_PARAMETER;
+
+	UPath unc;
+	if (unc.parse(lpRemoteName)) {
+		Shares shares;
+		if (GetShares(shares)) {
+			Shares::iterator iter = shares.begin();
+			for (; iter != shares.end(); iter++) {
+				if (true
+					&& StrCmpIW(iter->server.c_str(), unc.server.c_str()) == 0
+					&& StrCmpIW(iter->share.c_str(), unc.share.c_str()) == 0
+				) {
+					lpNetConnectInfo->dwFlags = WNCON_SLOWLINK;
+					lpNetConnectInfo->dwSpeed = 1000000 / 100;
+					lpNetConnectInfo->dwDelay = 50;
+					lpNetConnectInfo->dwOptDataSize = 65536;
+					return WN_SUCCESS;
+				}
+			}
+		}
+	}
+	return WN_NO_NETWORK;
 }

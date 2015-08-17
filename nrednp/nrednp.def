@@ -14,3 +14,4 @@ EXPORTS
 	NPGetResourceInformation	@52
 	NPLogonNotify				@500
 	NPPasswordChangeNotify		@501
+	NPGetConnectionPerformance	@11
