@@ -358,8 +358,6 @@ NRedIsIPC(
 					}
 				}
 			}
-		_Skip:
-			;
 		}
 		status = STATUS_OBJECT_PATH_NOT_FOUND;
 	} while (0);

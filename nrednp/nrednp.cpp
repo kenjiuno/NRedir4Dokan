@@ -1,4 +1,6 @@
 
+#pragma warning(disable: 4530)
+
 #include <windows.h>
 #include <winnetwk.h>
 #include <winsvc.h>
@@ -281,7 +283,7 @@ typedef struct NetRes {
 				ppcw = NULL;
 				return true;
 			}
-			DWORD cb = 2 * (ws.size() +1);
+			int cb = 2 * (ws.size() +1);
 			if (pHi -pLo < cb)
 				return false;
 			pHi -= cb;
@@ -567,7 +569,7 @@ typedef struct UniversalNameInfo { // UNIVERSAL_NAME_INFO structure
 				ppcw = NULL;
 				return true;
 			}
-			DWORD cb = 2 * (ws.size() +1);
+			int cb = 2 * (ws.size() +1);
 			if (pHi -pLo < cb)
 				return false;
 			pHi -= cb;
@@ -602,7 +604,7 @@ typedef struct WriteRemainingPath {
 				ppcw = NULL;
 				return true;
 			}
-			DWORD cb = 2 * (ws.size() +1);
+			int cb = 2 * (ws.size() +1);
 			if (pHi -pLo < cb)
 				return false;
 			pHi -= cb;
@@ -648,7 +650,7 @@ typedef struct RemoteNameInfo  { // REMOTE_NAME_INFO structure
 				ppcw = NULL;
 				return true;
 			}
-			DWORD cb = 2 * (ws.size() +1);
+			int cb = 2 * (ws.size() +1);
 			if (pHi -pLo < cb)
 				return false;
 			pHi -= cb;
