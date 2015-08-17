@@ -9,9 +9,7 @@
 #include <strsafe.h>
 #include <shlwapi.h>
 
-#include <string>
-#include <vector>
-#include <set>
+#include "nrednp.h"
 
 static VOID
 DokanDbgPrintW(LPCWSTR format, ...)
@@ -71,7 +69,7 @@ NPGetCaps(
 		break;
 	case WNNC_DIALOG:
 		DbgPrintW(L"  WNNC_DIALOG\n");
-		rc = WNNC_DLG_GETRESOURCEINFORMATION;
+		rc = WNNC_DLG_GETRESOURCEINFORMATION|WNNC_DLG_PROPERTYDIALOG|WNNC_DLG_FORMATNETWORKNAME;
 		break;
 	case WNNC_ADMIN:
 		DbgPrintW(L"  WNNC_ADMIN\n");
@@ -173,129 +171,6 @@ NPCancelConnection(
 	return WN_SUCCESS;
 }
 
-typedef struct Share {
-	std::wstring server, share, ntPath;
-	
-	bool parse(LPCWSTR pcw) {
-		if (pcw != NULL && *pcw == L'\\') {
-			LPCWSTR pcw1 = StrChrW(pcw +1, L'\\');
-			if (pcw1 != NULL) {
-				LPCWSTR pcw2 = StrChrW(pcw1 +1, L'\\');
-				if (pcw2 == NULL) {
-					server.assign(pcw +1, pcw1 -pcw -1);
-					share.assign(pcw1 +1);
-					return true;
-				}
-			}
-		}
-		return false;
-	}
-
-	bool test(LPCWSTR pcw) {
-		if (pcw != NULL && pcw[0] == L'\\' && pcw[1] == L'\\') {
-			if (StrCmpI(server.c_str(), pcw +2) == 0) {
-				return true;
-			}
-		}
-		return false;
-	}
-}	Share;
-
-typedef struct UPath {
-	std::wstring server, share, local;
-	
-	bool parse(LPCWSTR pcw) {
-		if (pcw != NULL && pcw[0] == L'\\' && pcw[1] == L'\\') {
-			LPCWSTR pcw0 = pcw +2;
-			LPCWSTR pcw1 = StrChrW(pcw0, L'\\');
-			if (pcw1 != NULL) {
-				server.assign(pcw0, pcw1 -pcw0);
-				
-				LPCWSTR pcw2 = StrChrW(pcw1 +1, L'\\');
-				if (pcw2 == NULL) {
-					share.assign(pcw1 +1);
-					local.clear();
-				}
-				else {
-					share.assign(pcw1 +1, pcw2 -pcw1 -1);
-					local.assign(pcw2 +1);
-				}
-				return true;
-			}
-		}
-		server.clear();
-		share.clear();
-		local.clear();
-		return false;
-	}
-}	UPath;
-
-typedef struct {
-	bool operator()(
-		const std::wstring &lv, 
-		const std::wstring &rv
-	) const {
-		return StrCmpIW(lv.c_str(), rv.c_str()) < 0;
-	}
-}	CompareNoCase;
-
-typedef std::vector<Share> Shares;
-
-typedef std::set<std::wstring, CompareNoCase> ServerSet;
-
-typedef struct NetRes {
-	DWORD Scope, Type, DisplayType, Usage;
-	std::wstring LocalName, RemoteName, Comment, Provider;
-	
-	DWORD Bytes() const {
-		return sizeof(NETRESOURCE)
-			+(LocalName.empty() ? 0 : 2 * (LocalName.size() +1))
-			+(RemoteName.empty() ? 0 : 2 * (RemoteName.size() +1))
-			+(Comment.empty() ? 0 : 2 * (Comment.size() +1))
-			+(Provider.empty() ? 0 : 2 * (Provider.size() +1))
-			;
-	}
-	
-	bool WriteTo(PBYTE &pLo, PBYTE &pHi) const {
-		if (pLo +sizeof(NETRESOURCE) > pHi)
-			return false;
-		NETRESOURCE *pNR = reinterpret_cast<NETRESOURCE *>(pLo);
-		pNR->dwScope = Scope;
-		pNR->dwType = Type;
-		pNR->dwDisplayType = DisplayType;
-		pNR->dwUsage = Usage;
-		pLo += sizeof(NETRESOURCE);
-		if (!Ut::Wr(pLo, pHi, LocalName, pNR->lpLocalName))
-			return false;
-		if (!Ut::Wr(pLo, pHi, RemoteName, pNR->lpRemoteName))
-			return false;
-		if (!Ut::Wr(pLo, pHi, Comment, pNR->lpComment))
-			return false;
-		if (!Ut::Wr(pLo, pHi, Provider, pNR->lpProvider))
-			return false;
-
-		return true;
-	}
-	
-	struct Ut {
-		static bool Wr(PBYTE &pLo, PBYTE &pHi, const std::wstring &ws, LPWSTR &ppcw) {
-			if (ws.empty()) {
-				ppcw = NULL;
-				return true;
-			}
-			int cb = 2 * (ws.size() +1);
-			if (pHi -pLo < cb)
-				return false;
-			pHi -= cb;
-			ppcw = reinterpret_cast<LPWSTR>(pHi);
-			memcpy(pHi, ws.c_str(), cb);
-			return true;
-		}
-	};
-}	NetRes;
-
-typedef std::vector<NetRes> NetReses;
-
 typedef struct EnumIt {
 	NetReses reses;
 	size_t y;
@@ -358,7 +233,7 @@ NPGetConnection(
 	__out LPWSTR RemoteName,
 	__inout LPDWORD BufferSize)
 {
-	DbgPrintW(L"NpGetConnection %s, %d\n", LocalName, *BufferSize);
+	DbgPrintW(L"NPGetConnection %s %d\n", LocalName, *BufferSize);
 
 	if (iswalpha(LocalName[0]) && LocalName[1] == L':') {
 		WCHAR wcLocal[10] = {LocalName[0], ':'};
@@ -541,81 +416,6 @@ NPEnumResource(
 	return WN_SUCCESS;
 }
 
-typedef struct UniversalNameInfo { // UNIVERSAL_NAME_INFO structure
-	std::wstring UniversalName;
-	
-	typedef UNIVERSAL_NAME_INFO TOutput;
-	
-	DWORD Bytes() const {
-		return sizeof(TOutput)
-			+(UniversalName.empty() ? 0 : 2 * (UniversalName.size() +1))
-			;
-	}
-	
-	bool WriteTo(PBYTE &pLo, PBYTE &pHi) const {
-		if (pLo +sizeof(TOutput) > pHi)
-			return false;
-		TOutput *pNR = reinterpret_cast<TOutput *>(pLo);
-		pLo += sizeof(TOutput);
-		if (!Ut::Wr(pLo, pHi, UniversalName, pNR->lpUniversalName))
-			return false;
-
-		return true;
-	}
-	
-	struct Ut {
-		static bool Wr(PBYTE &pLo, PBYTE &pHi, const std::wstring &ws, LPWSTR &ppcw) {
-			if (ws.empty()) {
-				ppcw = NULL;
-				return true;
-			}
-			int cb = 2 * (ws.size() +1);
-			if (pHi -pLo < cb)
-				return false;
-			pHi -= cb;
-			ppcw = reinterpret_cast<LPWSTR>(pHi);
-			memcpy(pHi, ws.c_str(), cb);
-			return true;
-		}
-	};
-}	UniversalNameInfo;
-
-typedef struct WriteRemainingPath {
-	std::wstring RemainingPath;
-	
-	DWORD Bytes() const {
-		return 
-			+(RemainingPath.empty() ? 0 : 2 * (RemainingPath.size() +1))
-			;
-	}
-	
-	bool WriteTo(PBYTE &pLo, PBYTE &pHi, LPWSTR &ppcw) const {
-		if (pLo > pHi)
-			return false;
-		if (!Ut::Wr(pLo, pHi, RemainingPath, ppcw))
-			return false;
-
-		return true;
-	}
-	
-	struct Ut {
-		static bool Wr(PBYTE &pLo, PBYTE &pHi, const std::wstring &ws, LPWSTR &ppcw) {
-			if (ws.empty()) {
-				ppcw = NULL;
-				return true;
-			}
-			int cb = 2 * (ws.size() +1);
-			if (pHi -pLo < cb)
-				return false;
-			pHi -= cb;
-			ppcw = reinterpret_cast<LPWSTR>(pHi);
-			memcpy(pHi, ws.c_str(), cb);
-			return true;
-		}
-	};
-}	WriteRemainingPath;
-
-
 typedef struct RemoteNameInfo  { // REMOTE_NAME_INFO structure
 	std::wstring UniversalName, ConnectionName, RemainingPath;
 	
@@ -669,7 +469,7 @@ NPGetUniversalName(
 	__in LPVOID Buffer,
 	__in LPDWORD BufferSize)
 {
-	DbgPrintW(L"NPGetUniversalName %s\n", LocalPath);
+	DbgPrintW(L"NPGetUniversalName %s %u \n", LocalPath, InfoLevel);
 	if (LocalPath == NULL)
 		return ERROR_INVALID_PARAMETER;
 	if (BufferSize == NULL)
@@ -753,7 +553,7 @@ NPGetResourceInformation(
 	__out LPDWORD BufferSize,
 	__out LPWSTR *System)
 {
-	DbgPrintW(L"NPGetResourceInformation\n");
+	DbgPrintW(L"NPGetResourceInformation %u \n", *BufferSize);
 	if (NetResource == NULL)
 		return ERROR_INVALID_PARAMETER;
 	if (BufferSize == NULL)
@@ -842,4 +642,60 @@ NPGetConnectionPerformance(
 		}
 	}
 	return WN_NO_NETWORK;
+}
+
+DWORD NPGetPropertyText(
+	__in    DWORD  iButton,
+	__in    DWORD  nPropSel,
+	__in    LPTSTR lpName,
+	__out   LPTSTR lpButtonName,
+	__inout DWORD  nButtonNameLen,
+	__in    DWORD  nType)
+{
+	DbgPrintW(L"NPGetPropertyText %s \n", lpName);
+	return WN_NOT_SUPPORTED;
+}
+
+DWORD NPFormatNetworkName(
+	__in    LPTSTR  lpRemoteName,
+	__out   LPTSTR  lpFormattedName,
+	__inout LPDWORD lpnLength,
+	__in    DWORD   dwFlags,
+	__in    DWORD   dwAveCharPerLine)
+{
+	DbgPrintW(L"NPFormatNetworkName %s %u %u \n", lpRemoteName, dwFlags, dwAveCharPerLine);
+	if (lpnLength == NULL)
+		return ERROR_INVALID_PARAMETER;
+	
+	if (0 != (dwFlags & WNFMT_ABBREVIATED)) {
+		UPath unc;
+		if (unc.parse(lpRemoteName)) {
+			 return Utsw::WriteTo(lpFormattedName, lpnLength, unc.share.c_str());
+		}
+	}
+	
+	return WN_BAD_NETNAME;
+}
+
+DWORD APIENTRY
+NPGetConnection3(
+	__in    LPCWSTR lpLocalName,
+	__in    DWORD   dwLevel,
+	__out   LPVOID  lpBuffer,
+	__inout LPDWORD lpBufferSize)
+{
+	DbgPrintW(L"NPGetConnection3 %s %u %u \n", lpLocalName, dwLevel, *lpBufferSize);
+
+	if (dwLevel == 1) {
+		if (lpBufferSize == NULL)
+			return ERROR_INVALID_PARAMETER;
+		if (*lpBufferSize < 4) {
+			*lpBufferSize = 4;
+			return WN_MORE_DATA;
+		}
+		*reinterpret_cast<DWORD *>(lpBuffer) = WNGETCON_CONNECTED;
+		*lpBufferSize = 4;
+		return WN_SUCCESS;
+	}
+	return ERROR_INVALID_PARAMETER;
 }

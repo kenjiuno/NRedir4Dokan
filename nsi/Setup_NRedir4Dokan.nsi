@@ -11,7 +11,7 @@
 !define NP "NRedir4Dokan"
 
 !define sysobj "objfre"
-!define npobj "objfre"
+!define npobj "objchk"
 
 ; The name of the installer
 Name "${APP}"
