@@ -10,6 +10,9 @@
 !define APP "NRedir4Dokan"
 !define NP "NRedir4Dokan"
 
+!define sysobj "objfre"
+!define npobj "objfre"
+
 ; The name of the installer
 Name "${APP}"
 
@@ -57,10 +60,10 @@ Section "driver install"
   SetOutPath "$SYSDIR\drivers"
   ${If} ${RunningX64}
     DetailPrint "win7 x64 driver"
-    File "..\sys\objchk_win7_amd64\amd64\NRedir4Dokan.sys"
+    File "..\sys\${sysobj}_win7_amd64\amd64\NRedir4Dokan.sys"
   ${Else}
     DetailPrint "win7 x86 driver"
-    File "..\sys\objchk_win7_x86\i386\NRedir4Dokan.sys"
+    File "..\sys\${sysobj}_win7_x86\i386\NRedir4Dokan.sys"
   ${EndIf}
 
   ExecWait 'sc.exe create NRedir4Dokan type= filesys start= auto binPath= "$OUTDIR\NRedir4Dokan.sys" DisplayName= ${APP} ' $0
@@ -87,11 +90,11 @@ Section "np install"
 
   ${If} ${RunningX64}
     SetOutPath "$PROGRAMFILES64\${APP}"
-    File "..\nrednp\objchk_win7_amd64\amd64\nrednp.dll"
+    File "..\nrednp\${npobj}_win7_amd64\amd64\nrednp.dll"
   ${EndIf}
   ${If} 1 > 0
     SetOutPath "$PROGRAMFILES32\${APP}"
-    File "..\nrednp\objchk_win7_x86\i386\nrednp.dll"
+    File "..\nrednp\${npobj}_win7_x86\i386\nrednp.dll"
   ${EndIf}
 
   ${EnableX64FSRedirection}
