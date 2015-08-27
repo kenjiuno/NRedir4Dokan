@@ -183,6 +183,7 @@ typedef struct EnumIt {
 bool GetShares(Shares &shares) {
 	LONG r;
 	HKEY hk = NULL;
+	bool any = false;
 	r = RegOpenKeyEx(
 		HKEY_LOCAL_MACHINE, 
 		L"SYSTEM\\CurrentControlSet\\Services\\NRedir4Dokan\\Map",
@@ -222,9 +223,50 @@ bool GetShares(Shares &shares) {
 			}
 		}
 		r = RegCloseKey(hk);
-		return true;
+		any |= true;
 	}
-	return false;
+	r = RegOpenKeyEx(
+		HKEY_LOCAL_MACHINE, 
+		L"SYSTEM\\CurrentControlSet\\Services\\NRedir4Dokan\\MapFull",
+		0,
+		KEY_READ,
+		&hk
+		);
+	if (ERROR_SUCCESS == r) {
+		DWORD y = 0;
+		for (; ; y++) {
+			WCHAR wcName[256] = {0};
+			DWORD cch = 256;
+			DWORD ty = 0;
+			BYTE buff[256] = {0};
+			DWORD cb = 256;
+			r = RegEnumValueW(
+				hk,
+				y,
+				wcName,
+				&cch,
+				NULL,
+				&ty,
+				buff,
+				&cb
+				);
+			if (ERROR_SUCCESS != r)
+				break;
+			if (ty == REG_SZ) {
+				LPCWSTR pcw = reinterpret_cast<LPCWSTR>(buff);
+				if (StrStrIW(pcw, L"Dokan") != NULL) {
+					Share s1;
+					if (s1.parse(wcName)) {
+						s1.ntPath = pcw;
+						shares.push_back(s1);
+					}
+				}
+			}
+		}
+		r = RegCloseKey(hk);
+		any |= true;
+	}
+	return any;
 }
 
 DWORD APIENTRY

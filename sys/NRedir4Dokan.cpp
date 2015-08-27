@@ -141,6 +141,7 @@ NRedMapPath(
 	// STATUS_OBJECT_PATH_NOT_FOUND
 	
 	HANDLE hkey = NULL;
+	HANDLE hkeyFull = NULL;
 	OBJECT_ATTRIBUTES objectAttribs;
 	NTSTATUS status;
 	PKEY_VALUE_FULL_INFORMATION pInfo = NULL;
@@ -159,7 +160,7 @@ NRedMapPath(
 	*pbMapOk = FALSE;
 	
 	do {
-		ULONG y = 0;
+		ULONG y;
 		const SIZE_T cbInfo = 4096;
 		
 		pInfo = (PKEY_VALUE_FULL_INFORMATION)ExAllocatePoolWithTag(PagedPool, cbInfo, NREG_REG_TAG);
@@ -170,106 +171,219 @@ NRedMapPath(
 		
 		InitializeObjectAttributes(&objectAttribs, &(pGlobal->RPMap), OBJ_KERNEL_HANDLE, NULL, NULL);
 		status = ZwOpenKey(&hkey, GENERIC_READ, &objectAttribs);
-		if (!NT_SUCCESS(status)) {
-			break;
-		}
-		
-		for (; y < 50; y++) {
-			ULONG cb = 0;
-			status = ZwEnumerateValueKey(hkey, y, KeyValueFullInformation, pInfo, cbInfo, &cb);
-			if (!NT_SUCCESS(status))
-				break;
-			
-			if (pInfo->Type == REG_SZ && (pInfo->NameLength) < 2*2048 && (pInfo->DataLength) < 2*2048) {
-				UNICODE_STRING RName, RData, SInTmp;
-				RName.Length = RName.MaximumLength = (USHORT)pInfo->NameLength; // bytes
-				RName.Buffer = pInfo->Name;
-				while (RName.Length >= 2 && RName.Buffer[(RName.Length / 2) -1] == 0) {
-					RName.Length -= 2;
-				}
-				if (RName.Length != 0 && RName.Buffer[(RName.Length / 2) -1] == L'\\') {
-					RName.Length -= 2;
-				}
-				RData.Length = RData.MaximumLength = (USHORT)pInfo->DataLength;
-				RData.Buffer = (WCHAR *)(((UCHAR *)pInfo) + pInfo->DataOffset);
-				while (RData.Length >= 2 && RData.Buffer[(RData.Length / 2) -1] == 0) {
-					RData.Length -= 2;
-				}
-				if (RData.Length >= 2 && RData.Buffer[(RData.Length / 2) -1] == L'\\') {
-					RData.Length -= 2;
-				}
+		if (NT_SUCCESS(status)) {
+			for (y = 0; y < 50; y++) {
+				ULONG cb = 0;
+				status = ZwEnumerateValueKey(hkey, y, KeyValueFullInformation, pInfo, cbInfo, &cb);
+				if (!NT_SUCCESS(status))
+					break;
 				
-				if (!NRedUnicodeStringContains(&RData, L"Dokan")) {
-					goto _Skip;
-				}
-				
-				// RName: \dokanworld\server
-				// SIn:   \dokanworld\server
-				if (RtlEqualUnicodeString(&RName, pSIn, TRUE)) {
-					*pbMapOk = TRUE;
-					if (pSOut == NULL) {
-						status = STATUS_INVALID_PARAMETER;
-						goto _Done;
+				if (pInfo->Type == REG_SZ && (pInfo->NameLength) < 2*2048 && (pInfo->DataLength) < 2*2048) {
+					UNICODE_STRING RName, RData, SInTmp;
+					RName.Length = RName.MaximumLength = (USHORT)pInfo->NameLength; // bytes
+					RName.Buffer = pInfo->Name;
+					while (RName.Length >= 2 && RName.Buffer[(RName.Length / 2) -1] == 0) {
+						RName.Length -= 2;
 					}
-					if (pSOut->MaximumLength < RData.Length) {
-						status = STATUS_BUFFER_TOO_SMALL;
-						goto _Done;
+					if (RName.Length != 0 && RName.Buffer[(RName.Length / 2) -1] == L'\\') {
+						RName.Length -= 2;
 					}
+					RData.Length = RData.MaximumLength = (USHORT)pInfo->DataLength;
+					RData.Buffer = (WCHAR *)(((UCHAR *)pInfo) + pInfo->DataOffset);
+					while (RData.Length >= 2 && RData.Buffer[(RData.Length / 2) -1] == 0) {
+						RData.Length -= 2;
+					}
+					if (RData.Length >= 2 && RData.Buffer[(RData.Length / 2) -1] == L'\\') {
+						RData.Length -= 2;
+					}
+					
+					if (NRedUnicodeStringContains(&RData, L"Dokan")) {
+						// part
+						// RName: \dokanworld\server
+						// SIn:   \dokanworld\server
+						if (RtlEqualUnicodeString(&RName, pSIn, TRUE)) {
+							*pbMapOk = TRUE;
+							if (pSOut == NULL) {
+								status = STATUS_INVALID_PARAMETER;
+								goto _Done;
+							}
+							if (pSOut->MaximumLength < RData.Length) {
+								status = STATUS_BUFFER_TOO_SMALL;
+								goto _Done;
+							}
 
-					RtlCopyUnicodeString(pSOut, &RData);
-					status = RtlUnicodeStringCatString(pSOut, L"\\");
-					goto _Done;
-				}
-
-				// RName: \dokanworld\server
-				// SIn:   \dokanworld\server\ 
-				SInTmp.Length = pSIn->Length;
-				SInTmp.MaximumLength = pSIn->MaximumLength;
-				SInTmp.Buffer = pSIn->Buffer;
-				if (RName.Length +2 == SInTmp.Length && SInTmp.Buffer[(SInTmp.Length / 2) -1] == L'\\') {
-					SInTmp.Length -= 2;
-					if (RtlEqualUnicodeString(&RName, &SInTmp, TRUE)) {
-						*pbMapOk = TRUE;
-						if (pSOut == NULL) {
-							status = STATUS_INVALID_PARAMETER;
+							RtlCopyUnicodeString(pSOut, &RData);
+							status = RtlUnicodeStringCatString(pSOut, L"\\");
 							goto _Done;
 						}
-						
-						RtlCopyUnicodeString(pSOut, &RData);
-						status = RtlUnicodeStringCatString(pSOut, L"\\");
-						goto _Done;
-					}
-				}
 
-				// RName: \dokanworld\server
-				// SIn:   \dokanworld\server\123.txt
-				if (RName.Length < (pSIn->Length) && pSIn->Buffer[(RName.Length / 2)] == L'\\') {
-					SInTmp.Length = RName.Length;
-					SInTmp.MaximumLength = pSIn->MaximumLength;
-					SInTmp.Buffer = pSIn->Buffer;
-					if (RtlEqualUnicodeString(&RName, &SInTmp, TRUE)) {
-						*pbMapOk = TRUE;
-						if (pSOut == NULL) {
-							status = STATUS_INVALID_PARAMETER;
-							goto _Done;
+						// part
+						// RName: \dokanworld\server
+						// SIn:   \dokanworld\server\ 
+						SInTmp.Length = pSIn->Length;
+						SInTmp.MaximumLength = pSIn->MaximumLength;
+						SInTmp.Buffer = pSIn->Buffer;
+						if (RName.Length +2 == SInTmp.Length && SInTmp.Buffer[(SInTmp.Length / 2) -1] == L'\\') {
+							SInTmp.Length -= 2;
+							if (RtlEqualUnicodeString(&RName, &SInTmp, TRUE)) {
+								*pbMapOk = TRUE;
+								if (pSOut == NULL) {
+									status = STATUS_INVALID_PARAMETER;
+									goto _Done;
+								}
+								if (pSOut->MaximumLength < RData.Length) {
+									status = STATUS_BUFFER_TOO_SMALL;
+									goto _Done;
+								}
+								
+								RtlCopyUnicodeString(pSOut, &RData);
+								status = RtlUnicodeStringCatString(pSOut, L"\\");
+								goto _Done;
+							}
 						}
-						RtlCopyUnicodeString(pSOut, &RData);
-						SInTmp.Buffer += RName.Length / 2;
-						SInTmp.Length = pSIn->Length -(RName.Length);
-						status = RtlUnicodeStringCat(pSOut, &SInTmp);
-						goto _Done;
+
+						// part
+						// RName: \dokanworld\server
+						// SIn:   \dokanworld\server\123.txt
+						if (RName.Length < (pSIn->Length) && pSIn->Buffer[(RName.Length / 2)] == L'\\') {
+							SInTmp.Length = RName.Length;
+							SInTmp.MaximumLength = pSIn->MaximumLength;
+							SInTmp.Buffer = pSIn->Buffer;
+							if (RtlEqualUnicodeString(&RName, &SInTmp, TRUE)) {
+								*pbMapOk = TRUE;
+								if (pSOut == NULL) {
+									status = STATUS_INVALID_PARAMETER;
+									goto _Done;
+								}
+								if (pSOut->MaximumLength < RData.Length) {
+									status = STATUS_BUFFER_TOO_SMALL;
+									goto _Done;
+								}
+
+								RtlCopyUnicodeString(pSOut, &RData);
+								SInTmp.Buffer += RName.Length / 2;
+								SInTmp.Length = pSIn->Length -(RName.Length);
+								status = RtlUnicodeStringCat(pSOut, &SInTmp);
+								goto _Done;
+							}
+						}
 					}
 				}
 			}
-		_Skip:
-			;
 		}
+
+		InitializeObjectAttributes(&objectAttribs, &(pGlobal->RPMapFull), OBJ_KERNEL_HANDLE, NULL, NULL);
+		status = ZwOpenKey(&hkeyFull, GENERIC_READ, &objectAttribs);
+		if (NT_SUCCESS(status)) {
+			for (y = 0; y < 50; y++) {
+				ULONG cb = 0;
+				status = ZwEnumerateValueKey(hkeyFull, y, KeyValueFullInformation, pInfo, cbInfo, &cb);
+				if (!NT_SUCCESS(status))
+					break;
+				
+				if (pInfo->Type == REG_SZ && (pInfo->NameLength) < 2*2048 && (pInfo->DataLength) < 2*2048) {
+					UNICODE_STRING RName, RData, SInTmp;
+					RName.Length = RName.MaximumLength = (USHORT)pInfo->NameLength; // bytes
+					RName.Buffer = pInfo->Name;
+					while (RName.Length >= 2 && RName.Buffer[(RName.Length / 2) -1] == 0) {
+						RName.Length -= 2;
+					}
+					if (RName.Length != 0 && RName.Buffer[(RName.Length / 2) -1] == L'\\') {
+						RName.Length -= 2;
+					}
+					RData.Length = RData.MaximumLength = (USHORT)pInfo->DataLength;
+					RData.Buffer = (WCHAR *)(((UCHAR *)pInfo) + pInfo->DataOffset);
+					while (RData.Length >= 2 && RData.Buffer[(RData.Length / 2) -1] == 0) {
+						RData.Length -= 2;
+					}
+					if (RData.Length >= 2 && RData.Buffer[(RData.Length / 2) -1] == L'\\') {
+						RData.Length -= 2;
+					}
+					
+					if (NRedUnicodeStringContains(&RData, L"Dokan")) {
+						// full
+						// RName: \dokanworld\server
+						// SIn:   \dokanworld\server
+						if (RtlEqualUnicodeString(&RName, pSIn, TRUE)) {
+							*pbMapOk = TRUE;
+							if (pSOut == NULL) {
+								status = STATUS_INVALID_PARAMETER;
+								goto _Done;
+							}
+							if (pSOut->MaximumLength < RData.Length + pSIn->Length) {
+								status = STATUS_BUFFER_TOO_SMALL;
+								goto _Done;
+							}
+
+							RtlCopyUnicodeString(pSOut, &RData);
+							status = RtlUnicodeStringCat(pSOut, pSIn);
+							if (NT_SUCCESS(status))
+								status = RtlUnicodeStringCatString(pSOut, L"\\");
+							goto _Done;
+						}
+
+						// full
+						// RName: \dokanworld\server
+						// SIn:   \dokanworld\server\ 
+						SInTmp.Length = pSIn->Length;
+						SInTmp.MaximumLength = pSIn->MaximumLength;
+						SInTmp.Buffer = pSIn->Buffer;
+						if (RName.Length +2 == SInTmp.Length && SInTmp.Buffer[(SInTmp.Length / 2) -1] == L'\\') {
+							SInTmp.Length -= 2;
+							if (RtlEqualUnicodeString(&RName, &SInTmp, TRUE)) {
+								*pbMapOk = TRUE;
+								if (pSOut == NULL) {
+									status = STATUS_INVALID_PARAMETER;
+									goto _Done;
+								}
+								if (pSOut->MaximumLength < RData.Length + pSIn->Length) {
+									status = STATUS_BUFFER_TOO_SMALL;
+									goto _Done;
+								}
+								
+								RtlCopyUnicodeString(pSOut, &RData);
+								status = RtlUnicodeStringCat(pSOut, pSIn);
+								goto _Done;
+							}
+						}
+
+						// full
+						// RName: \dokanworld\server
+						// SIn:   \dokanworld\server\123.txt
+						if (RName.Length < (pSIn->Length) && pSIn->Buffer[(RName.Length / 2)] == L'\\') {
+							SInTmp.Length = RName.Length;
+							SInTmp.MaximumLength = pSIn->MaximumLength;
+							SInTmp.Buffer = pSIn->Buffer;
+							if (RtlEqualUnicodeString(&RName, &SInTmp, TRUE)) {
+								*pbMapOk = TRUE;
+								if (pSOut == NULL) {
+									status = STATUS_INVALID_PARAMETER;
+									goto _Done;
+								}
+								if (pSOut->MaximumLength < RData.Length + pSIn->Length) {
+									status = STATUS_BUFFER_TOO_SMALL;
+									goto _Done;
+								}
+
+								RtlCopyUnicodeString(pSOut, &RData);
+								status = RtlUnicodeStringCat(pSOut, pSIn);
+								goto _Done;
+							}
+						}
+					}
+				}
+			}
+		}
+
 		status = STATUS_OBJECT_PATH_NOT_FOUND;
+
 	} while (0);
 
 _Done:
 	if (hkey != NULL)
 		ZwClose(hkey);
+	if (hkeyFull != NULL)
+		ZwClose(hkeyFull);
 	if (pInfo != NULL)
 		ExFreePoolWithTag(pInfo, NREG_REG_TAG);
 
@@ -537,7 +651,7 @@ NRedDeviceControl(
 				else {
 					status = NRedMapPath(pGlobal, &SIn, NULL, &bMapOk); // shall return STATUS_INVALID_PARAMETER
 					if (!bMapOk) {
-						status = STATUS_BAD_NETWORK_PATH;
+						status = STATUS_BAD_NETWORK_NAME;
 						break;
 					}
 				}
@@ -704,22 +818,41 @@ DriverEntry(
 
 		pGlobal->Identifier.Type = DGL;
 		pGlobal->Identifier.Size = sizeof(NRED_GLOBAL);
+		
+		{
+			pGlobal->RPMap.MaximumLength = RegistryPath->MaximumLength +2*1 +2*3 +2*1; // bytes
+
+			status = SimRepAllocateUnicodeString(&(pGlobal->RPMap));
+			if (!NT_SUCCESS(status)) {
+				DDbgPrint("  SimRepAllocateUnicodeString returned 0x%x\n", status);
+				break;
+			}
 			
-		pGlobal->RPMap.MaximumLength = RegistryPath->MaximumLength +2*1 +2*3 +2*1; // bytes
+			RtlCopyUnicodeString(&(pGlobal->RPMap), RegistryPath);
 			
-		status = SimRepAllocateUnicodeString(&(pGlobal->RPMap));
-		if (!NT_SUCCESS(status)) {
-			DDbgPrint("  SimRepAllocateUnicodeString returned 0x%x\n", status);
-			break;
+			status = RtlUnicodeStringCatString(&(pGlobal->RPMap), L"\\Map");
+			if (!NT_SUCCESS(status)) {
+				break;
+			}
 		}
-		
-		RtlCopyUnicodeString(&(pGlobal->RPMap), RegistryPath);
-		
-		status = RtlUnicodeStringCatString(&(pGlobal->RPMap), L"\\Map");
-		if (!NT_SUCCESS(status)) {
-			break;
+
+		{
+			pGlobal->RPMapFull.MaximumLength = RegistryPath->MaximumLength +2*1 +2*7 +2*1; // bytes
+
+			status = SimRepAllocateUnicodeString(&(pGlobal->RPMapFull));
+			if (!NT_SUCCESS(status)) {
+				DDbgPrint("  SimRepAllocateUnicodeString returned 0x%x\n", status);
+				break;
+			}
+			
+			RtlCopyUnicodeString(&(pGlobal->RPMapFull), RegistryPath);
+			
+			status = RtlUnicodeStringCatString(&(pGlobal->RPMapFull), L"\\MapFull");
+			if (!NT_SUCCESS(status)) {
+				break;
+			}
 		}
-		
+
 		//
 		// Set up dispatch entry points for the driver.
 		//
@@ -751,6 +884,7 @@ DriverEntry(
 		}
 		if (pGlobal != NULL) {
 			SimRepFreeUnicodeString(&(pGlobal->RPMap));
+			SimRepFreeUnicodeString(&(pGlobal->RPMapFull));
 		}
 	}
 	
@@ -779,6 +913,7 @@ NRedUnload(
 		IoDeleteSymbolicLink(&symbolicLinkName);
 		IoDeleteDevice(fsDevice);
 		SimRepFreeUnicodeString(&pGlobal->RPMap);
+		SimRepFreeUnicodeString(&pGlobal->RPMapFull);
 	}
 
 	DDbgPrint("<== NRedUnload\n");
@@ -813,4 +948,5 @@ DokanPrintNTStatus(NTSTATUS Status)
 	PrintStatus(Status, STATUS_INVALID_HANDLE);
 	PrintStatus(Status, STATUS_REPARSE);
 	PrintStatus(Status, STATUS_BAD_NETWORK_PATH);
+	PrintStatus(Status, STATUS_BAD_NETWORK_NAME);
 }

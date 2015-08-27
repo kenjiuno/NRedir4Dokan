@@ -10,7 +10,7 @@
 !define APP "NRedir4Dokan"
 !define NP "NRedir4Dokan"
 
-!define sysobj "objfre"
+!define sysobj "objchk"
 !define npobj "objchk"
 
 ; The name of the installer
@@ -56,8 +56,8 @@ SectionEnd ; end the section
 
 Section "driver install"
   SectionIn 1
+  SetOutPath "$INSTDIR"
   ${DisableX64FSRedirection}
-  SetOutPath "$SYSDIR\drivers"
   ${If} ${RunningX64}
     DetailPrint "win7 x64 driver"
     File "..\sys\${sysobj}_win7_amd64\amd64\NRedir4Dokan.sys"
@@ -65,8 +65,10 @@ Section "driver install"
     DetailPrint "win7 x86 driver"
     File "..\sys\${sysobj}_win7_x86\i386\NRedir4Dokan.sys"
   ${EndIf}
+  
+  Rename /REBOOTOK "NRedir4Dokan.sys" "$SYSDIR\drivers\NRedir4Dokan.sys"
 
-  ExecWait 'sc.exe create NRedir4Dokan type= filesys start= auto binPath= "$OUTDIR\NRedir4Dokan.sys" DisplayName= ${APP} ' $0
+  ExecWait 'sc.exe create NRedir4Dokan type= filesys start= auto binPath= "$SYSDIR\drivers\NRedir4Dokan.sys" DisplayName= ${APP} ' $0
   DetailPrint "Œ‹‰Ê: $0"
   ${EnableX64FSRedirection}
 SectionEnd
@@ -89,12 +91,16 @@ Section "np install"
   ${DisableX64FSRedirection}
 
   ${If} ${RunningX64}
-    SetOutPath "$PROGRAMFILES64\${APP}"
+    SetOutPath "$INSTDIR\x64"
     File "..\nrednp\${npobj}_win7_amd64\amd64\nrednp.dll"
+    
+    Rename /REBOOTOK "nrednp.dll" "$PROGRAMFILES64\${APP}\nrednp.dll"
   ${EndIf}
   ${If} 1 > 0
-    SetOutPath "$PROGRAMFILES32\${APP}"
+    SetOutPath "$INSTDIR\x86"
     File "..\nrednp\${npobj}_win7_x86\i386\nrednp.dll"
+
+    Rename /REBOOTOK "nrednp.dll" "$PROGRAMFILES32\${APP}\nrednp.dll"
   ${EndIf}
 
   ${EnableX64FSRedirection}
@@ -131,4 +137,11 @@ Section "np delete"
   ReadRegStr  $1 HKLM "SYSTEM\CurrentControlSet\Control\NetworkProvider\Order" "ProviderOrder"
   ${WordAddS} $1 "," "-${NP}" $2
   WriteRegStr    HKLM "SYSTEM\CurrentControlSet\Control\NetworkProvider\Order" "ProviderOrder" $2
+SectionEnd
+
+Section ""
+  IfRebootFlag 0 noreboot
+    MessageBox MB_ICONEXCLAMATION|MB_YESNO "A reboot is required to finish the installation. Do you wish to reboot now?" IDNO noreboot
+      Reboot
+noreboot:
 SectionEnd

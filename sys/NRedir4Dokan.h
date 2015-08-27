@@ -56,6 +56,7 @@ typedef struct _NRED_GLOBAL {
 	PDEVICE_OBJECT	DeviceObject;
 	HANDLE					MupHandle;
 	UNICODE_STRING  RPMap; // registry mapping path
+	UNICODE_STRING  RPMapFull; // registry mapping path
 } NRED_GLOBAL, *PNRED_GLOBAL;
 
 extern "C" DRIVER_INITIALIZE DriverEntry;
